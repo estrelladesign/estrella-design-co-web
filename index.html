@@ -1318,20 +1318,30 @@ document.documentElement.classList.add('js-ready');
   function toggle(show){ panel.hidden=!show; if(show) setTimeout(function(){input.focus();},50); }
   btn.addEventListener('click',function(){ toggle(panel.hidden); });
   closeB.addEventListener('click',function(){ toggle(false); });
+  var convLang=null;
+  function ask(msgs,tries){
+    var ac=new AbortController(); var to=setTimeout(function(){ac.abort();},22000);
+    return fetch(WORKER,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:msgs}),signal:ac.signal})
+      .then(function(r){ clearTimeout(to); if(!r.ok) throw new Error('http'); return r.json(); })
+      .then(function(d){ if(!d||!d.reply) throw new Error('empty'); return d.reply; })
+      .catch(function(err){ clearTimeout(to); if(tries>0) return ask(msgs,tries-1); throw err; });
+  }
   form.addEventListener('submit',function(e){
     e.preventDefault();
-    var text=input.value.trim(); if(!text) return;
+    var text=input.value.trim(); if(!text||send.disabled) return;
     input.value=''; add('me',text); history.push({role:'user',content:text});
     var typing=add('bot typing',T[L()].typing); send.disabled=true;
-    var reply=guess(text)||L();
+    var g=guess(text); if(g) convLang=g;
+    var reply=g||convLang||L();
     var hint = reply==='en' ? '\n\n(Reply in English.)' : '\n\n(Responde en español.)';
     var msgs=history.slice(-8).map(function(m,i,arr){ return (m.role==='user'&&i===arr.length-1)?{role:'user',content:m.content+hint}:m; });
-    msgs.unshift({role:'system',content: reply==='en' ? 'The visitor writes in English. Answer in natural English only, even though your business notes are in Spanish.' : 'El visitante escribe en español. Responde solo en español.'});
-    fetch(WORKER,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:msgs,lang:reply})})
-      .then(function(r){return r.json();})
-      .then(function(d){ typing.remove(); var r=(d&&d.reply)||T[L()].err; add('bot',r); history.push({role:'assistant',content:r}); })
-      .catch(function(){ typing.remove(); add('bot',T[L()].err); })
-      .then(function(){ send.disabled=false; });
+    msgs.unshift({role:'system',content: reply==='en'
+      ? 'The visitor writes in English. Answer in natural English only, even though your business notes are in Spanish. IMPORTANT LIMITS: you are only a chat assistant. You cannot send calendars, available dates, files, quotes, emails or messages, you cannot book or schedule meetings or calls, and you cannot follow up later. Never promise any of that. For scheduling, quotes, a demo, or anything you cannot do yourself, tell the visitor to email estrelladesignco21@gmail.com to coordinate. Never invent availability, prices or details.'
+      : 'El visitante escribe en español. Responde solo en español. LÍMITES IMPORTANTES: eres solo un asistente de chat. No puedes enviar calendarios, fechas disponibles, archivos, cotizaciones, correos ni mensajes, no puedes agendar reuniones ni llamadas, y no puedes dar seguimiento después. Nunca prometas nada de eso. Para agendar, cotizar, pedir una demo o cualquier cosa que no puedas hacer tú, indica al visitante que escriba por correo a estrelladesignco21@gmail.com para coordinar. Nunca inventes disponibilidad, precios ni detalles.'});
+    ask(msgs,1)
+      .then(function(r){ typing.remove(); add('bot',r); history.push({role:'assistant',content:r}); })
+      .catch(function(){ typing.remove(); history.pop(); add('bot',T[reply].err); })
+      .then(function(){ send.disabled=false; input.focus(); });
   });
 })();
 
